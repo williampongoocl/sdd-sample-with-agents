@@ -55,15 +55,15 @@ Instruction files define rules that Copilot applies automatically to every inter
 
 ### `.github/prompts/` — Repeatable Task Workflows
 
-Prompt files are invoked by typing `/prompt-name` in Copilot Chat (or via the prompt picker). Each one owns a specific phase of the SDD workflow.
+Some prompts are invoked directly by the user as slash commands. Others are used **internally by the orchestrator** — the orchestrator runs them on your behalf when you speak to it in Copilot Chat. You never need to invoke the internal ones yourself.
 
-| File | Slash command | When to run | What it does |
-|------|---------------|-------------|--------------|
-| `generate-stories-from-transcript.prompt.md` | `/generate-stories-from-transcript` | After you have a transcript in `docs/transcript/transcript.txt` | Reads the transcript, extracts INVEST-compliant user stories, and writes each as a separate `.md` file under `docs/stories/` |
-| `research-and-plan.prompt.md` | `/research-and-plan` | Before implementing any story or feature | Dispatches parallel `@researcher` agents (codebase, docs, source code), consolidates findings, then dispatches `@planner` to produce a user-approved implementation plan |
-| `generate-implementation-plan.prompt.md` | `/generate-implementation-plan` | Before implementation begins on a story | Generates a detailed implementation plan document covering design, component structure, state management, testing, and task breakdown. Saves to `docs/implementation-plans/` |
-| `implement-and-review.prompt.md` | `/implement-and-review` | After a plan is approved | Dispatches `@implementer` streams (parallel where safe), then dispatches `@reviewer` to gate each batch before the next begins |
-| `execute-implementation-plan.prompt.md` | `/execute-implementation-plan` | When implementing one task at a time | Executes a single task from a story, validates against acceptance criteria, and updates task status checkboxes |
+| File | How to invoke | When it runs | What it does |
+|------|---------------|--------------|--------------|
+| `generate-stories-from-transcript.prompt.md` | `/generate-stories-from-transcript` (user-invoked) | After you place a transcript in `docs/transcript/transcript.txt` | Reads the transcript, extracts INVEST-compliant user stories, and writes each as a separate `.md` file under `docs/stories/` |
+| `research-and-plan.prompt.md` | **Orchestrator-internal** — triggered when you tell `@orchestrator` what you want to implement | GATHER + PLAN phases, before any implementation begins | Dispatches parallel `@researcher` agents (codebase, docs, source code), consolidates findings, then dispatches `@planner` to produce a user-approved implementation plan |
+| `generate-implementation-plan.prompt.md` | `/generate-implementation-plan` (user-invoked) | After approving the high-level plan from `@orchestrator` | Generates a detailed implementation plan document covering design, component structure, state management, testing, and task breakdown. Saves to `docs/implementation-plans/` |
+| `implement-and-review.prompt.md` | **Orchestrator-internal** — triggered when you approve the plan in `@orchestrator` chat | EXECUTE + REVIEW phases, after plan approval | Dispatches `@implementer` streams (parallel where safe), then dispatches `@reviewer` to gate each batch before the next begins |
+| `execute-implementation-plan.prompt.md` | `/execute-implementation-plan` (user-invoked) | When implementing one task at a time with granular control | Executes a single task from a story, validates against acceptance criteria, and updates task status checkboxes |
 
 ---
 
@@ -155,20 +155,15 @@ PO: Let's start with water tracking — keep it simple. 8 glasses per day is the
 
 ### Step 3 — Research and plan a story
 
-**What to do:** Pick a story to implement. Open Copilot Chat and run:
+**What to do:** Pick a story to implement. Open Copilot Chat and start a conversation with the orchestrator, describing what you want to build:
 
 ```
-/research-and-plan
-```
-
-Then in the same message, tell the orchestrator which story you want to work on:
-
-```
-/research-and-plan
-
-I want to implement story 01 — Track daily water intake.
+@orchestrator I want to implement story 01 — Track daily water intake.
 The story is in docs/stories/01-track-daily-water-intake.md.
+Please research the codebase and produce an implementation plan.
 ```
+
+> **Note:** You do not need to type `/research-and-plan` manually. The orchestrator runs that workflow internally as soon as you describe your task.
 
 **What the agent does (Phase 1 — GATHER):**
 
@@ -296,21 +291,16 @@ Produces a comprehensive plan document saved to `docs/implementation-plans/01-tr
 
 #### Option A — Full plan execution (recommended for multi-task stories)
 
-Run the full implement-and-review cycle:
+Once you have approved the plan (in Step 3 or Step 4), continue the conversation in the same `@orchestrator` chat:
 
 ```
-/implement-and-review
-```
-
-Then paste or reference the approved plan:
-
-```
-/implement-and-review
-
+@orchestrator Approved. Please proceed with implementation.
 Approved plan: docs/implementation-plans/01-track-daily-water-intake.md
 
 Please execute all phases. Parallelise Phase 1 and Phase 2 if their file scopes do not overlap.
 ```
+
+> **Note:** You do not need to type `/implement-and-review` manually. The orchestrator runs that workflow internally once you approve the plan.
 
 **What the agent does:**
 
@@ -405,12 +395,10 @@ When a new feature request, change request, or scope refinement comes in, follow
 
 1. **Edit the story file directly** in `docs/stories/NN-story-name.md`. Update the acceptance criteria to reflect the change.
 
-2. **Re-run research and plan** with the updated story:
+2. **Re-run research and plan** by telling the orchestrator about the change:
 
    ```
-   /research-and-plan
-
-   Story 02 (docs/stories/02-customize-water-goal.md) has been updated.
+   @orchestrator Story 02 (docs/stories/02-customize-water-goal.md) has been updated.
    The new requirement is: users can set a goal between 4 and 20 glasses (previously only 8 was supported).
    Please re-research and produce a revised plan. The existing implementation in src/app/water/ may need changes.
    ```
@@ -485,7 +473,7 @@ If a review returns `Revisions required` or you discover a bug after implementat
 .github/
 ├── agents/           # Agent personas (orchestrator, researcher, planner, implementer, reviewer)
 ├── instructions/     # Persistent rules applied to every Copilot interaction
-├── prompts/          # Slash-command workflows (/generate-stories-from-transcript, etc.)
+├── prompts/          # Task workflows — some user-invoked (/generate-stories-from-transcript, etc.), some orchestrator-internal
 └── skills/
     └── memory-improvement/   # Reactive harness improvement proposals
 
@@ -499,15 +487,24 @@ docs/
 
 ---
 
-## Quick Reference — Slash Commands
+## Quick Reference
 
-| Command | When | Example input |
-|---------|------|---------------|
-| `/generate-stories-from-transcript` | You have a transcript | *(no extra input needed — reads `docs/transcript/transcript.txt` automatically)* |
-| `/research-and-plan` | Before implementing a story | `I want to implement story 01 — docs/stories/01-track-daily-water-intake.md` |
-| `/generate-implementation-plan` | After approving the high-level plan | Paste the story + approved plan summary |
-| `/implement-and-review` | After approving the detailed plan | `Approved plan: docs/implementation-plans/01-track-daily-water-intake.md` |
-| `/execute-implementation-plan` | One task at a time | Paste the specific task + its acceptance criteria |
+### User entry points
+
+| How to invoke | When | Example |
+|---------------|------|---------|
+| `@orchestrator` + describe the story | Start GATHER + PLAN for any story (Steps 3–4) | `@orchestrator I want to implement story 01 — docs/stories/01-track-daily-water-intake.md. Please research and plan.` |
+| `@orchestrator` + approve the plan | Start EXECUTE + REVIEW after plan approval (Step 5A) | `@orchestrator Approved. Please proceed with implementation.` |
+| `/generate-stories-from-transcript` | Extract stories from the transcript (Step 2) | *(no extra input — reads `docs/transcript/transcript.txt` automatically)* |
+| `/generate-implementation-plan` | Generate a detailed plan document after `@orchestrator` produces the high-level plan (Step 4) | Paste the story + approved plan summary |
+| `/execute-implementation-plan` | Implement one task at a time for granular control (Step 5B) | Paste the specific task + its acceptance criteria |
+
+### Orchestrator-internal prompts (no manual invocation needed)
+
+| Prompt file | Triggered by | What it does |
+|-------------|-------------|---------------|
+| `research-and-plan.prompt.md` | Telling `@orchestrator` what to implement | Runs the full GATHER (researchers) + PLAN (planner) loop |
+| `implement-and-review.prompt.md` | Approving a plan in `@orchestrator` chat | Runs the full EXECUTE (implementers) + REVIEW (reviewer) loop |
 
 ---
 
